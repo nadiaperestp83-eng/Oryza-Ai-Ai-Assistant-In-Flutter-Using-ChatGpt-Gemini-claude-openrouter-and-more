@@ -31,7 +31,7 @@ dependencies:
   dart_openai: ^5.1.0
   cached_network_image: ^3.3.1
   
-  google_generative_ai: ^0.4.3
+
 
   translator_plus: ^1.0.1
 
