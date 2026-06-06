@@ -15,7 +15,6 @@ class AIResponse {
 
 class APIs {
 
-  // ── GEMINI ──────────────────────────────────────
   static Future<String> getAnswerGemini(String question) async {
     try {
       final model = GenerativeModel(
@@ -38,7 +37,6 @@ class APIs {
     }
   }
 
-  // ── CLAUDE ──────────────────────────────────────
   static Future<String> getAnswerClaude(String question) async {
     try {
       final res = await post(
@@ -64,7 +62,6 @@ class APIs {
     }
   }
 
-  // ── GROQ ─────────────────────────────────────────
   static Future<String> getAnswerGroq(String question) async {
     try {
       final res = await post(
@@ -89,31 +86,30 @@ class APIs {
     }
   }
 
-  // ── ROTEADOR ─────────────────────────────────────
   static Future<AIResponse> getAnswer(String question) async {
-    final q = question.toLowerCase();
+    try {
+      final q = question.toLowerCase();
 
-    if (q.contains('código') || q.contains('code') ||
-        q.contains('dart') || q.contains('python') ||
-        q.contains('flutter') || q.contains('função') ||
-        q.contains('erro') || q.contains('bug')) {
-      log('Router → Groq');
-      return AIResponse(text: await getAnswerGroq(question), provider: 'Groq');
+      if (q.contains('código') || q.contains('code') ||
+          q.contains('dart') || q.contains('python') ||
+          q.contains('flutter') || q.contains('função') ||
+          q.contains('erro') || q.contains('bug')) {
+        return AIResponse(text: await getAnswerGroq(question), provider: 'Groq');
+      }
+
+      if (q.contains('explica') || q.contains('redija') ||
+          q.contains('resumo') || q.contains('analise') ||
+          q.contains('escreva') || q.contains('texto') ||
+          q.length > 300) {
+        return AIResponse(text: await getAnswerClaude(question), provider: 'Claude');
+      }
+
+      return AIResponse(text: await getAnswerGemini(question), provider: 'Gemini');
+    } catch (e) {
+      return AIResponse(text: 'Erro geral: $e', provider: 'Erro');
     }
-
-    if (q.contains('explica') || q.contains('redija') ||
-        q.contains('resumo') || q.contains('analise') ||
-        q.contains('escreva') || q.contains('texto') ||
-        q.length > 300) {
-      log('Router → Claude');
-      return AIResponse(text: await getAnswerClaude(question), provider: 'Claude');
-    }
-
-    log('Router → Gemini');
-    return AIResponse(text: await getAnswerGemini(question), provider: 'Gemini');
   }
 
-  // ── IMAGENS ──────────────────────────────────────
   static Future<List<String>> searchAiImages(String prompt) async {
     try {
       final res =
@@ -126,7 +122,6 @@ class APIs {
     }
   }
 
-  // ── TRADUÇÃO ─────────────────────────────────────
   static Future<String> googleTranslate({
     required String from,
     required String to,
