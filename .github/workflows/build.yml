@@ -16,9 +16,9 @@ jobs:
         with:
           flutter-version: '3.22.0'
 
-      - name: Configurar chaves no global.dart
-        run: |
-          sed -i "s/String apiKey = '';/String apiKey = 'SUA_CHAVE_GEMINI';/" lib/helper/global.dart
+      - name: Configurar chaves
+  run: |
+    sed -i "s/String apiKey = '';/String apiKey = '${{ secrets.GEMINI_KEY }}';/" lib/helper/global.dart
           sed -i "s/String gptKey = '';/String gptKey = 'SUA_CHAVE_GPT';/" lib/helper/global.dart
           sed -i "s/String claudeKey = '';/String claudeKey = 'SUA_CHAVE_CLAUDE';/" lib/helper/global.dart
           sed -i "s/String xiaoAiKey = '';/String xiaoAiKey = 'SUA_CHAVE_XIAOAI';/" lib/helper/global.dart
