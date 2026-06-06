@@ -19,7 +19,7 @@ class APIs {
   static Future<String> getAnswerGemini(String question) async {
     try {
       final model = GenerativeModel(
-        model: 'gemini-1.5-flash-latest',
+        model: 'gemini-2.0-flash',
         apiKey: apiKey,
       );
       final res = await model.generateContent(
