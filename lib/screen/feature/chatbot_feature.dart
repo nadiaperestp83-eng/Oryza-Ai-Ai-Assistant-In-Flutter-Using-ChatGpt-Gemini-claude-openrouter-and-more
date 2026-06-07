@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
-import '../../../controller/chat_controller.dart';
-import '../../../helper/global.dart';
-import '../../../widget/message_card.dart';
-import '../image/image_feature.dart';
-import '../translator/translate_feature.dart';
+import '../../controller/chat_controller.dart';
+import '../../helper/global.dart';
+import '../../widget/message_card.dart';
+import 'image_feature.dart';
+import 'translator_feature.dart';
 
 class ChatBotFeature extends StatefulWidget {
   const ChatBotFeature({super.key});
@@ -67,7 +67,6 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
 
       body: Stack(
         children: [
-          // Gradiente de fundo estilo HyperOS
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -80,8 +79,6 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
               ),
             ),
           ),
-
-          // Conteúdo da tab selecionada
           if (_selectedTab == 0)
             Obx(() => ListView(
                   physics: const BouncingScrollPhysics(),
@@ -95,9 +92,9 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
                       _c.list.map((e) => MessageCard(message: e)).toList(),
                 ))
           else if (_selectedTab == 1)
-            const ImageFeature()
+            ImageFeature()
           else if (_selectedTab == 2)
-            const TranslateFeature()
+            TranslateFeature()
           else
             const Center(
               child: Column(
@@ -127,41 +124,38 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-
-              // Chips de navegação
               if (_selectedTab == 0)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        _chip('🎨 Criar Imagem', () => setState(() => _selectedTab = 1)),
+                        _chip('🎨 Criar Imagem',
+                            () => setState(() => _selectedTab = 1)),
                         const SizedBox(width: 8),
-                        _chip('🌐 Traduzir', () => setState(() => _selectedTab = 2)),
+                        _chip('🌐 Traduzir',
+                            () => setState(() => _selectedTab = 2)),
                         const SizedBox(width: 8),
-                        _chip('🎬 Criar Vídeo', () => setState(() => _selectedTab = 3)),
+                        _chip('🎬 Criar Vídeo',
+                            () => setState(() => _selectedTab = 3)),
                         const SizedBox(width: 8),
                         _chip('🔍 Pesquisar', () {}),
                       ],
                     ),
                   ),
                 ),
-
-              // Campo de input
               if (_selectedTab == 0)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: Row(
                     children: [
-                      // Botão câmera
                       IconButton(
                         onPressed: () {},
                         icon: const Icon(Icons.camera_alt_outlined,
                             color: Colors.grey, size: 22),
                       ),
-
-                      // Campo de texto
                       Expanded(
                         child: Container(
                           decoration: BoxDecoration(
@@ -183,10 +177,7 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
                           ),
                         ),
                       ),
-
                       const SizedBox(width: 8),
-
-                      // Botão microfone
                       Container(
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
@@ -198,15 +189,15 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
                               color: Colors.grey, size: 22),
                         ),
                       ),
-
                       const SizedBox(width: 8),
-
-                      // Botão enviar
                       Container(
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: LinearGradient(
-                            colors: [Color(0xFF6B8EFF), Color(0xFFB06BFF)],
+                            colors: [
+                              Color(0xFF6B8EFF),
+                              Color(0xFFB06BFF)
+                            ],
                           ),
                         ),
                         child: IconButton(
@@ -223,10 +214,10 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
         ),
       ),
 
-      // Barra de navegação inferior
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
+          border:
+              Border(top: BorderSide(color: Color(0xFFEEEEEE))),
         ),
         child: BottomNavigationBar(
           currentIndex: _selectedTab,
@@ -235,7 +226,8 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
           backgroundColor: Colors.white,
           selectedItemColor: const Color(0xFF6B8EFF),
           unselectedItemColor: Colors.grey,
-          selectedLabelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          selectedLabelStyle: const TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w600),
           unselectedLabelStyle: const TextStyle(fontSize: 11),
           elevation: 0,
           items: _tabs
@@ -253,14 +245,16 @@ class _ChatBotFeatureState extends State<ChatBotFeature> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFFF0F0F0),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,
-          style: const TextStyle(fontSize: 13, color: Colors.black87),
+          style:
+              const TextStyle(fontSize: 13, color: Colors.black87),
         ),
       ),
     );
