@@ -14,6 +14,34 @@ class AIResponse {
 
 class APIs {
 
+  // ── OPENROUTER (acesso a 400+ modelos) ───────────
+  static Future<String> getAnswerOpenRouter(String question, String model) async {
+    try {
+      final res = await post(
+        Uri.parse('https://openrouter.ai/api/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $openrouterKey',
+          'HTTP-Referer': 'https://github.com/nadiaperesoficial-hash',
+        },
+        body: jsonEncode({
+          'model': model,
+          'max_tokens': 2000,
+          'messages': [
+            {'role': 'user', 'content': question},
+          ],
+        }),
+      );
+      final data = jsonDecode(res.body);
+      if (data['choices'] == null) return '';
+      final text = data['choices'][0]['message']['content'] ?? '';
+      return text;
+    } catch (e) {
+      log('getAnswerOpenRouterE: $e');
+      return '';
+    }
+  }
+
   // ── GEMINI ──────────────────────────────────────
   static Future<String> getAnswerGemini(String question) async {
     try {
@@ -32,16 +60,16 @@ class APIs {
         }),
       );
       final data = jsonDecode(res.body);
-      if (data['candidates'] == null) return 'Erro Gemini: ${res.body}';
-      return data['candidates'][0]['content']['parts'][0]['text'];
+      if (data['candidates'] == null) return '';
+      return data['candidates'][0]['content']['parts'][0]['text'] ?? '';
     } catch (e) {
       log('getAnswerGeminiE: $e');
-      return 'Erro Gemini: $e';
+      return '';
     }
   }
 
-  // ── GROQ LLAMA (código) ──────────────────────────
-  static Future<String> getAnswerGroq(String question) async {
+  // ── GROQ ─────────────────────────────────────────
+  static Future<String> getAnswerGroq(String question, String model) async {
     try {
       final res = await post(
         Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
@@ -50,7 +78,7 @@ class APIs {
           'Authorization': 'Bearer $groqKey',
         },
         body: jsonEncode({
-          'model': 'llama-3.3-70b-versatile',
+          'model': model,
           'max_tokens': 2000,
           'messages': [
             {'role': 'user', 'content': question},
@@ -58,95 +86,91 @@ class APIs {
         }),
       );
       final data = jsonDecode(res.body);
-      return data['choices'][0]['message']['content'];
+      if (data['choices'] == null) return '';
+      return data['choices'][0]['message']['content'] ?? '';
     } catch (e) {
       log('getAnswerGroqE: $e');
-      return 'Erro Groq: $e';
+      return '';
     }
   }
 
-  // ── GROQ MIXTRAL (textos longos) ─────────────────
-  static Future<String> getAnswerMixtral(String question) async {
-    try {
-      final res = await post(
-        Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $groqKey',
-        },
-        body: jsonEncode({
-          'model': 'mixtral-8x7b-32768',
-          'max_tokens': 2000,
-          'messages': [
-            {'role': 'user', 'content': question},
-          ],
-        }),
-      );
-      final data = jsonDecode(res.body);
-      return data['choices'][0]['message']['content'];
-    } catch (e) {
-      log('getAnswerMixtralE: $e');
-      return 'Erro Mixtral: $e';
-    }
+  // ── CLAUDE via OpenRouter ────────────────────────
+  static Future<String> getAnswerClaude(String question) async {
+    return getAnswerOpenRouter(question, 'anthropic/claude-sonnet-4-5');
   }
 
-  // ── GROQ GEMMA (perguntas rápidas) ───────────────
-  static Future<String> getAnswerGemma(String question) async {
-    try {
-      final res = await post(
-        Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $groqKey',
-        },
-        body: jsonEncode({
-          'model': 'gemma2-9b-it',
-          'max_tokens': 2000,
-          'messages': [
-            {'role': 'user', 'content': question},
-          ],
-        }),
-      );
-      final data = jsonDecode(res.body);
-      return data['choices'][0]['message']['content'];
-    } catch (e) {
-      log('getAnswerGemmaE: $e');
-      return 'Erro Gemma: $e';
-    }
+  // ── DEEPSEEK via OpenRouter ──────────────────────
+  static Future<String> getAnswerDeepSeek(String question) async {
+    return getAnswerOpenRouter(question, 'deepseek/deepseek-chat');
   }
 
-  // ── ROTEADOR ─────────────────────────────────────
+  // ── ROTEADOR COM FALLBACK ────────────────────────
   static Future<AIResponse> getAnswer(String question) async {
-    try {
-      final q = question.toLowerCase();
-      final prompt = 'Responda sempre em português brasileiro. $question';
+    final q = question.toLowerCase();
+    final prompt = 'Responda sempre em português brasileiro. $question';
 
-      // Código → Llama (Groq)
-      if (q.contains('código') || q.contains('code') ||
-          q.contains('dart') || q.contains('python') ||
-          q.contains('flutter') || q.contains('função') ||
-          q.contains('erro') || q.contains('bug')) {
-        return AIResponse(text: await getAnswerGroq(prompt), provider: 'Llama');
-      }
+    // Define ordem de tentativas por tipo de pergunta
+    List<Future<String> Function()> attempts;
 
-      // Textos longos → Mixtral (Groq)
-      if (q.contains('explica') || q.contains('redija') ||
-          q.contains('resumo') || q.contains('analise') ||
-          q.contains('escreva') || q.contains('texto') ||
-          q.length > 300) {
-        return AIResponse(text: await getAnswerMixtral(prompt), provider: 'Mixtral');
-      }
-
-      // Gemini → perguntas gerais (se falhar cai no Gemma)
-      final geminiRes = await getAnswerGemini(prompt);
-      if (geminiRes.startsWith('Erro')) {
-        return AIResponse(text: await getAnswerGemma(prompt), provider: 'Gemma');
-      }
-      return AIResponse(text: geminiRes, provider: 'Gemini');
-
-    } catch (e) {
-      return AIResponse(text: 'Erro geral: $e', provider: 'Erro');
+    if (q.contains('código') || q.contains('code') ||
+        q.contains('dart') || q.contains('python') ||
+        q.contains('flutter') || q.contains('função') ||
+        q.contains('erro') || q.contains('bug')) {
+      attempts = [
+        () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'),
+        () => getAnswerDeepSeek(prompt),
+        () => getAnswerOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct:free'),
+        () => getAnswerGemini(prompt),
+      ];
+    } else if (q.contains('explica') || q.contains('redija') ||
+        q.contains('resumo') || q.contains('analise') ||
+        q.contains('escreva') || q.contains('texto') ||
+        q.length > 300) {
+      attempts = [
+        () => getAnswerClaude(prompt),
+        () => getAnswerGroq(prompt, 'mixtral-8x7b-32768'),
+        () => getAnswerOpenRouter(prompt, 'google/gemma-3-27b-it:free'),
+        () => getAnswerGemini(prompt),
+      ];
+    } else {
+      attempts = [
+        () => getAnswerGemini(prompt),
+        () => getAnswerGroq(prompt, 'gemma2-9b-it'),
+        () => getAnswerOpenRouter(prompt, 'google/gemma-3-12b-it:free'),
+        () => getAnswerClaude(prompt),
+      ];
     }
+
+    // Tenta cada provider na ordem
+    final providerNames = {
+      0: q.contains('código') || q.contains('code') || q.contains('dart') ? 'Llama' : q.length > 100 ? 'Claude' : 'Gemini',
+    };
+
+    for (int i = 0; i < attempts.length; i++) {
+      try {
+        final result = await attempts[i]();
+        if (result.isNotEmpty && !result.startsWith('Erro')) {
+          String name = '';
+          if (i == 0) {
+            if (q.contains('código') || q.contains('dart') || q.contains('flutter')) name = 'Llama';
+            else if (q.contains('escreva') || q.contains('texto')) name = 'Claude';
+            else name = 'Gemini';
+          } else if (i == 1) {
+            if (q.contains('código')) name = 'DeepSeek';
+            else name = 'Mixtral';
+          } else {
+            name = 'Gemma';
+          }
+          return AIResponse(text: result, provider: name);
+        }
+      } catch (e) {
+        log('Tentativa $i falhou: $e');
+      }
+    }
+
+    return AIResponse(
+        text: 'Nenhuma IA disponível no momento. Tente novamente.',
+        provider: 'Erro');
   }
 
   // ── IMAGENS ──────────────────────────────────────
