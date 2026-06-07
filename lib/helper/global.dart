@@ -4,7 +4,8 @@ const appName = 'Ai Assistant';
 
 late Size mq;
 
-String apiKey = '';
-String claudeKey = '';
-String groqKey = '';
-String deepseekKey = '';
+String apiKey = '';        // Gemini
+String claudeKey = '';     // Claude
+String groqKey = '';       // Groq
+String deepseekKey = '';   // DeepSeek
+String openrouterKey = ''; // OpenRouter
