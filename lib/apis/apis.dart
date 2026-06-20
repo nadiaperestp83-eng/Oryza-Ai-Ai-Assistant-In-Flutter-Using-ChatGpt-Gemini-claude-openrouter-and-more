@@ -14,16 +14,6 @@ class AIResponse {
 }
 
 class APIs {
-  static const String systemPrompt = '''
-Você é um especialista em Flutter/Dart. Suas respostas são práticas, completas e prontas para copiar e colar. Priorize simplicidade e dependências mínimas.
-
-## Padrões de Código
-- Use null-safety e Dart 3.
-- Gerenciamento de estado: prefira `setState` para UIs simples, ou `ValueNotifier` para múltiplas telas. Não introduza Riverpod/Bloc a menos que solicitado explicitamente.
-- Estrutura: comece com `lib/main.dart`. Depois divida em `models/`, `screens/`, `widgets/` conforme necessário.
-- Forneça blocos **completos** (imports, `main()`, árvore de widgets, lógica). Use `//` para comentários breves.
-''';
-
   // ── VERIFICAÇÃO DE CHAVES ──────────────────────────
   static String _checkKeys() {
     List<String> missing = [];
@@ -53,7 +43,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           'model': model,
           'max_tokens': 2000,
           'messages': [
-            {'role': 'system', 'content': systemPrompt},
             {'role': 'user', 'content': question},
           ],
         }),
@@ -76,6 +65,52 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
     }
   }
 
+  // ── CLAUDE (API DIRETA DA ANTHROPIC) ──────────────
+  static Future<AIResponse> getAnswerClaudeDirect(String question) async {
+    if (claudeKey.isEmpty) {
+      return AIResponse(text: '❌ Claude direto: chave não configurada.', provider: 'Erro');
+    }
+    try {
+      final res = await post(
+        Uri.parse('https://api.anthropic.com/v1/messages'),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': claudeKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: jsonEncode({
+          'model': 'claude-sonnet-4-5',
+          'max_tokens': 2000,
+          'messages': [
+            {'role': 'user', 'content': question},
+          ],
+        }),
+      );
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(
+          text: '❌ Claude direto (status ${res.statusCode}): $errorBody',
+          provider: 'Erro',
+        );
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['content']?[0]?['text'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: '❌ Claude direto: resposta vazia.', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'Claude');
+    } catch (e) {
+      return AIResponse(text: '❌ Claude direto: exceção - $e', provider: 'Erro');
+    }
+  }
+
+  // ── CLAUDE com fallback (direto -> OpenRouter) ────
+  static Future<AIResponse> getAnswerClaude(String question) async {
+    final direct = await getAnswerClaudeDirect(question);
+    if (direct.provider != 'Erro') return direct;
+    return getAnswerOpenRouter(question, 'anthropic/claude-sonnet-4-5');
+  }
+
   // ── GEMINI (auth key via header x-goog-api-key) ──
   static Future<AIResponse> getAnswerGemini(String question) async {
     if (apiKey.isEmpty) {
@@ -93,7 +128,7 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           'contents': [
             {
               'parts': [
-                {'text': '$systemPrompt\n\nPergunta: $question'}
+                {'text': question}
               ]
             }
           ]
@@ -133,7 +168,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           'model': model,
           'max_tokens': 2000,
           'messages': [
-            {'role': 'system', 'content': systemPrompt},
             {'role': 'user', 'content': question},
           ],
         }),
@@ -172,7 +206,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           'model': model,
           'max_tokens': 2000,
           'messages': [
-            {'role': 'system', 'content': systemPrompt},
             {'role': 'user', 'content': question},
           ],
         }),
@@ -194,14 +227,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
       return AIResponse(text: '❌ Cerebras: exceção - $e', provider: 'Erro');
     }
   }
-
-  // ── PROVEDORES DE ATALHO ──────────────────────────
-  static Future<AIResponse> getAnswerClaude(String question) =>
-      getAnswerOpenRouter(question, 'anthropic/claude-sonnet-4-5');
-  static Future<AIResponse> getAnswerDeepSeek(String question) =>
-      getAnswerOpenRouter(question, 'deepseek/deepseek-chat');
-  static Future<AIResponse> getAnswerChatGptOpenRouter(String question) =>
-      getAnswerOpenRouter(question, 'openai/gpt-4o-mini');
 
   // ── IMAGEM ────────────────────────────────────────
   static Future<String> generateImage(String prompt) async {
@@ -230,7 +255,9 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
     }
   }
 
-  // ── ROTEADOR PRINCIPAL (COM RELATÓRIO DE ERROS) ──
+  // ── ROTEADOR PRINCIPAL: 2 GRUPOS COM FALLBACK ────
+  // Grupo 1 (simples/dia a dia): Gemini -> fallback Groq
+  // Grupo 2 (complexo/textos/código): Cerebras -> Groq -> Claude (direto+OpenRouter)
   static Future<AIResponse> getAnswer(String question) async {
     final keyCheck = _checkKeys();
     if (keyCheck.isNotEmpty) {
@@ -238,36 +265,33 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
     }
 
     final q = question.toLowerCase();
-    final prompt = 'Responda sempre em português brasileiro. $question';
 
-    List<Map<String, dynamic>> attempts = [];
-    if (q.contains('código') || q.contains('code') ||
+    final isComplex = q.contains('código') || q.contains('code') ||
         q.contains('dart') || q.contains('python') ||
         q.contains('flutter') || q.contains('função') ||
-        q.contains('erro') || q.contains('bug')) {
-      attempts = [
-        {'fn': () => getAnswerCerebras(prompt, 'llama-4-scout-17b-16e-instruct'), 'name': 'Cerebras'},
-        {'fn': () => getAnswerDeepSeek(prompt), 'name': 'DeepSeek'},
-        {'fn': () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'), 'name': 'Groq-Llama'},
-        {'fn': () => getAnswerOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct:free'), 'name': 'Llama-Free'},
-        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
-      ];
-    } else if (q.contains('explica') || q.contains('redija') ||
+        q.contains('erro') || q.contains('bug') ||
+        q.contains('explica') || q.contains('redija') ||
         q.contains('resumo') || q.contains('analise') ||
         q.contains('escreva') || q.contains('texto') ||
-        q.length > 300) {
+        q.length > 300;
+
+    List<Map<String, dynamic>> attempts;
+
+    if (isComplex) {
+      // GRUPO 2: complexo
       attempts = [
-        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
-        {'fn': () => getAnswerClaude(prompt), 'name': 'Claude'},
-        {'fn': () => getAnswerGroq(prompt, 'mixtral-8x7b-32768'), 'name': 'Mixtral'},
-        {'fn': () => getAnswerOpenRouter(prompt, 'google/gemma-3-27b-it:free'), 'name': 'Gemma'},
+        {'fn': () => getAnswerCerebras(question, 'llama-4-scout-17b-16e-instruct'), 'name': 'Cerebras'},
+        {'fn': () => getAnswerGroq(question, 'llama-3.3-70b-versatile'), 'name': 'Groq'},
+        {'fn': () => getAnswerClaude(question), 'name': 'Claude'},
+        {'fn': () => getAnswerGemini(question), 'name': 'Gemini'},
       ];
     } else {
+      // GRUPO 1: simples/dia a dia
       attempts = [
-        {'fn': () => getAnswerClaude(prompt), 'name': 'Claude'},
-        {'fn': () => getAnswerChatGptOpenRouter(prompt), 'name': 'ChatGPT'},
-        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
-        {'fn': () => getAnswerGroq(prompt, 'gemma2-9b-it'), 'name': 'Gemma-Groq'},
+        {'fn': () => getAnswerGemini(question), 'name': 'Gemini'},
+        {'fn': () => getAnswerGroq(question, 'gemma2-9b-it'), 'name': 'Groq'},
+        {'fn': () => getAnswerCerebras(question, 'llama-4-scout-17b-16e-instruct'), 'name': 'Cerebras'},
+        {'fn': () => getAnswerClaude(question), 'name': 'Claude'},
       ];
     }
 
