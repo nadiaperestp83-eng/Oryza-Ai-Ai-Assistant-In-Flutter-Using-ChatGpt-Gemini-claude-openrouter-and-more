@@ -82,27 +82,23 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
     }
   }
 
-  // ── GEMINI ──────────────────────────────────────
+  // ── GEMINI (CORRIGIDO) ──────────────────────────
   static Future<String> getAnswerGemini(String question) async {
     if (apiKey.isEmpty) {
       log('⚠️ Gemini API key não definida');
       return '';
     }
     try {
+      // Modelo estável e amplamente disponível para contas gratuitas
       final res = await post(
         Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey'),
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey'),
         headers: {'Content-Type': 'application/json; charset=utf-8'},
         body: jsonEncode({
-          'system_instruction': {
-            'parts': [
-              {'text': systemPrompt}
-            ]
-          },
           'contents': [
             {
               'parts': [
-                {'text': question}
+                {'text': '$systemPrompt\n\nPergunta do usuário: $question'}
               ]
             }
           ]
@@ -215,7 +211,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
       log('⚠️ Cloudflare key não definida');
       return '';
     }
-    // A conta ID deve ser configurável – vamos usar uma variável do global.dart
     const String accountId = '344ae813a0f97087c8b9d03eeb5dbfb5'; // substitua pela sua
     try {
       final res = await post(
@@ -240,7 +235,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
 
   // ── ROTEADOR COM FALLBACK ────────────────────────
   static Future<AIResponse> getAnswer(String question) async {
-    // Se nenhuma chave estiver configurada, avisa imediatamente
     final hasAnyKey = apiKey.isNotEmpty || openrouterKey.isNotEmpty ||
         groqKey.isNotEmpty || cerebrasKey.isNotEmpty;
     if (!hasAnyKey) {
@@ -260,8 +254,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
         q.contains('dart') || q.contains('python') ||
         q.contains('flutter') || q.contains('função') ||
         q.contains('erro') || q.contains('bug')) {
-      // Programação: Cerebras (velocidade técnica) → DeepSeek (lógica de
-      // programação, custo eficiente) → resto como reserva
       attempts = [
         () => getAnswerCerebras(prompt, 'llama-4-scout-17b-16e-instruct'),
         () => getAnswerDeepSeek(prompt),
@@ -274,8 +266,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
         q.contains('resumo') || q.contains('analise') ||
         q.contains('escreva') || q.contains('texto') ||
         q.length > 300) {
-      // Humanidades: Gemini (fatos, contexto histórico/geográfico) →
-      // Claude (reescreve com voz mais humana e fluida) → resto como reserva
       attempts = [
         () => getAnswerGemini(prompt),
         () => getAnswerClaude(prompt),
@@ -284,8 +274,6 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
       ];
       names = ['Gemini', 'Claude', 'Mixtral', 'Gemma'];
     } else {
-      // Geral / Saúde / Política: Claude (curadoria, menos alucinação) →
-      // ChatGPT via OpenRouter (verificador rápido) → resto como reserva
       attempts = [
         () => getAnswerClaude(prompt),
         () => getAnswerChatGptOpenRouter(prompt),
