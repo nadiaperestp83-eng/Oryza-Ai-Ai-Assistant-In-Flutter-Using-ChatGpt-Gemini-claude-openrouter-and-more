@@ -30,6 +30,7 @@ dependencies:
   google_fonts: ^6.2.1
   speech_to_text: ^7.0.0
   flutter_tts: ^4.0.0
+  audioplayers: ^6.1.0
 
   dart_openai: ^5.1.0
   cached_network_image: ^3.3.1
