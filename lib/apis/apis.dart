@@ -96,6 +96,33 @@ class APIs {
     }
   }
 
+  // ── CEREBRAS ─────────────────────────────────────
+  static Future<String> getAnswerCerebras(String question, String model) async {
+    try {
+      final res = await post(
+        Uri.parse('https://api.cerebras.ai/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': 'Bearer $cerebrasKey',
+        },
+        body: jsonEncode({
+          'model': model,
+          'max_tokens': 2000,
+          'messages': [
+            {'role': 'user', 'content': question},
+          ],
+        }),
+      );
+      final body = utf8.decode(res.bodyBytes);
+      final data = jsonDecode(body);
+      if (data['choices'] == null) return '';
+      return data['choices'][0]['message']['content'] ?? '';
+    } catch (e) {
+      log('getAnswerCerebrasE: $e');
+      return '';
+    }
+  }
+
   // ── CLAUDE via OpenRouter ────────────────────────
   static Future<String> getAnswerClaude(String question) async {
     return getAnswerOpenRouter(question, 'anthropic/claude-sonnet-4-5');
@@ -104,6 +131,11 @@ class APIs {
   // ── DEEPSEEK via OpenRouter ──────────────────────
   static Future<String> getAnswerDeepSeek(String question) async {
     return getAnswerOpenRouter(question, 'deepseek/deepseek-chat');
+  }
+
+  // ── CHATGPT via OpenRouter ───────────────────────
+  static Future<String> getAnswerChatGptOpenRouter(String question) async {
+    return getAnswerOpenRouter(question, 'openai/gpt-4o-mini');
   }
 
   // ── CLOUDFLARE WORKERS AI (geração de imagem) ────
@@ -139,32 +171,39 @@ class APIs {
         q.contains('dart') || q.contains('python') ||
         q.contains('flutter') || q.contains('função') ||
         q.contains('erro') || q.contains('bug')) {
+      // Programação: Cerebras (velocidade técnica) → DeepSeek (lógica de
+      // programação, custo eficiente) → resto como reserva
       attempts = [
-        () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'),
+        () => getAnswerCerebras(prompt, 'llama-4-scout-17b-16e-instruct'),
         () => getAnswerDeepSeek(prompt),
+        () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'),
         () => getAnswerOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct:free'),
         () => getAnswerGemini(prompt),
       ];
-      names = ['Llama', 'DeepSeek', 'Llama', 'Gemini'];
+      names = ['Cerebras', 'DeepSeek', 'Llama', 'Llama', 'Gemini'];
     } else if (q.contains('explica') || q.contains('redija') ||
         q.contains('resumo') || q.contains('analise') ||
         q.contains('escreva') || q.contains('texto') ||
         q.length > 300) {
+      // Humanidades: Gemini (fatos, contexto histórico/geográfico) →
+      // Claude (reescreve com voz mais humana e fluida) → resto como reserva
       attempts = [
+        () => getAnswerGemini(prompt),
         () => getAnswerClaude(prompt),
         () => getAnswerGroq(prompt, 'mixtral-8x7b-32768'),
         () => getAnswerOpenRouter(prompt, 'google/gemma-3-27b-it:free'),
-        () => getAnswerGemini(prompt),
       ];
-      names = ['Claude', 'Mixtral', 'Gemma', 'Gemini'];
+      names = ['Gemini', 'Claude', 'Mixtral', 'Gemma'];
     } else {
+      // Geral / Saúde / Política: Claude (curadoria, menos alucinação) →
+      // ChatGPT via OpenRouter (verificador rápido) → resto como reserva
       attempts = [
+        () => getAnswerClaude(prompt),
+        () => getAnswerChatGptOpenRouter(prompt),
         () => getAnswerGemini(prompt),
         () => getAnswerGroq(prompt, 'gemma2-9b-it'),
-        () => getAnswerOpenRouter(prompt, 'google/gemma-3-12b-it:free'),
-        () => getAnswerClaude(prompt),
       ];
-      names = ['Gemini', 'Gemma', 'Gemma', 'Claude'];
+      names = ['Claude', 'ChatGPT', 'Gemini', 'Gemma'];
     }
 
     for (int i = 0; i < attempts.length; i++) {
