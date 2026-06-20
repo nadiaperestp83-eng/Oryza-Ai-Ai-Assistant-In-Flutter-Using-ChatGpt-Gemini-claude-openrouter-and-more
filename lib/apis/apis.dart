@@ -14,7 +14,6 @@ class AIResponse {
 }
 
 class APIs {
-  // ── SYSTEM PROMPT (Flutter Expert) ──────────────────────────────
   static const String systemPrompt = '''
 Você é um especialista em Flutter/Dart. Suas respostas são práticas, completas e prontas para copiar e colar. Priorize simplicidade e dependências mínimas.
 
@@ -31,25 +30,24 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
 - Estrutura: comece com `lib/main.dart`. Depois divida em `models/`, `screens/`, `widgets/` conforme necessário.
 - Forneça blocos **completos** (imports, `main()`, árvore de widgets, lógica). Use `//` para comentários breves.
 - Inclua comandos `flutter create` se o projeto ainda não existir.
-
-## Fluxo de Trabalho no GitHub (celular)
-- O usuário edita o código pelo navegador do GitHub no celular (sem Termux).
-- Para criar um repositório: use o app ou site mobile do GitHub.
-- Para adicionar arquivos: clique em "Add file" → "Create new file" ou faça upload.
-- Para commitar: escreva uma mensagem, escolha o branch e clique em "Commit changes".
-- Para gerar APK: sugira usar GitHub Actions (forneça um workflow básico em `.github/workflows/build.yml`) ou um serviço externo como CodeMagic.
-
-## Formato de Saída
-- Se for código: use ```dart ... ``` com o caminho completo do arquivo como comentário na primeira linha.
-- Se for comando: forneça o comando exato (ex.: `flutter create meu_app`).
-- Se for explicação: mantenha abaixo de 3 frases, a menos que perguntado.
 ''';
 
+  // ── VERIFICAÇÃO DE CHAVES ──────────────────────────
+  static String _checkKeys() {
+    List<String> missing = [];
+    if (apiKey.isEmpty) missing.add('Gemini (apiKey)');
+    if (openrouterKey.isEmpty) missing.add('OpenRouter (openrouterKey)');
+    if (groqKey.isEmpty) missing.add('Groq (groqKey)');
+    if (cerebrasKey.isEmpty) missing.add('Cerebras (cerebrasKey)');
+    if (cloudflareKey.isEmpty) missing.add('Cloudflare (cloudflareKey)');
+    if (missing.isEmpty) return '';
+    return '⚠️ Chaves não configuradas: ${missing.join(', ')}.\nConfigure em lib/helper/global.dart.';
+  }
+
   // ── OPENROUTER ───────────────────────────────────
-  static Future<String> getAnswerOpenRouter(String question, String model) async {
+  static Future<AIResponse> getAnswerOpenRouter(String question, String model) async {
     if (openrouterKey.isEmpty) {
-      log('⚠️ OpenRouter key não definida');
-      return '';
+      return AIResponse(text: '❌ OpenRouter: chave não configurada.', provider: 'Erro');
     }
     try {
       final res = await post(
@@ -68,28 +66,30 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           ],
         }),
       );
-      final body = utf8.decode(res.bodyBytes);
-      log('OpenRouter response: ${body.substring(0, body.length > 200 ? 200 : body.length)}...');
-      final data = jsonDecode(body);
-      if (data['choices'] == null || data['choices'].isEmpty) {
-        log('OpenRouter: choices vazio');
-        return '';
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(
+          text: '❌ OpenRouter (status ${res.statusCode}): $errorBody',
+          provider: 'Erro',
+        );
       }
-      return data['choices'][0]['message']['content'] ?? '';
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['choices']?[0]?['message']?['content'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: '❌ OpenRouter: resposta vazia.', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'OpenRouter');
     } catch (e) {
-      log('getAnswerOpenRouterE: $e');
-      return '';
+      return AIResponse(text: '❌ OpenRouter: exceção - $e', provider: 'Erro');
     }
   }
 
-  // ── GEMINI (CORRIGIDO) ──────────────────────────
-  static Future<String> getAnswerGemini(String question) async {
+  // ── GEMINI ──────────────────────────────────────
+  static Future<AIResponse> getAnswerGemini(String question) async {
     if (apiKey.isEmpty) {
-      log('⚠️ Gemini API key não definida');
-      return '';
+      return AIResponse(text: '❌ Gemini: chave não configurada.', provider: 'Erro');
     }
     try {
-      // Modelo estável e amplamente disponível para contas gratuitas
       final res = await post(
         Uri.parse(
             'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey'),
@@ -98,31 +98,34 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           'contents': [
             {
               'parts': [
-                {'text': '$systemPrompt\n\nPergunta do usuário: $question'}
+                {'text': '$systemPrompt\n\nPergunta: $question'}
               ]
             }
           ]
         }),
       );
-      final body = utf8.decode(res.bodyBytes);
-      log('Gemini response: ${body.substring(0, body.length > 200 ? 200 : body.length)}...');
-      final data = jsonDecode(body);
-      if (data['candidates'] == null || data['candidates'].isEmpty) {
-        log('Gemini: candidates vazio');
-        return '';
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(
+          text: '❌ Gemini (status ${res.statusCode}): $errorBody',
+          provider: 'Erro',
+        );
       }
-      return data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['candidates']?[0]?['content']?['parts']?[0]?['text'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: '❌ Gemini: resposta vazia.', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'Gemini');
     } catch (e) {
-      log('getAnswerGeminiE: $e');
-      return '';
+      return AIResponse(text: '❌ Gemini: exceção - $e', provider: 'Erro');
     }
   }
 
   // ── GROQ ─────────────────────────────────────────
-  static Future<String> getAnswerGroq(String question, String model) async {
+  static Future<AIResponse> getAnswerGroq(String question, String model) async {
     if (groqKey.isEmpty) {
-      log('⚠️ Groq key não definida');
-      return '';
+      return AIResponse(text: '❌ Groq: chave não configurada.', provider: 'Erro');
     }
     try {
       final res = await post(
@@ -140,25 +143,28 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           ],
         }),
       );
-      final body = utf8.decode(res.bodyBytes);
-      log('Groq response: ${body.substring(0, body.length > 200 ? 200 : body.length)}...');
-      final data = jsonDecode(body);
-      if (data['choices'] == null || data['choices'].isEmpty) {
-        log('Groq: choices vazio');
-        return '';
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(
+          text: '❌ Groq (status ${res.statusCode}): $errorBody',
+          provider: 'Erro',
+        );
       }
-      return data['choices'][0]['message']['content'] ?? '';
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['choices']?[0]?['message']?['content'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: '❌ Groq: resposta vazia.', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'Groq');
     } catch (e) {
-      log('getAnswerGroqE: $e');
-      return '';
+      return AIResponse(text: '❌ Groq: exceção - $e', provider: 'Erro');
     }
   }
 
   // ── CEREBRAS ─────────────────────────────────────
-  static Future<String> getAnswerCerebras(String question, String model) async {
+  static Future<AIResponse> getAnswerCerebras(String question, String model) async {
     if (cerebrasKey.isEmpty) {
-      log('⚠️ Cerebras key não definida');
-      return '';
+      return AIResponse(text: '❌ Cerebras: chave não configurada.', provider: 'Erro');
     }
     try {
       final res = await post(
@@ -176,42 +182,38 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
           ],
         }),
       );
-      final body = utf8.decode(res.bodyBytes);
-      log('Cerebras response: ${body.substring(0, body.length > 200 ? 200 : body.length)}...');
-      final data = jsonDecode(body);
-      if (data['choices'] == null || data['choices'].isEmpty) {
-        log('Cerebras: choices vazio');
-        return '';
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(
+          text: '❌ Cerebras (status ${res.statusCode}): $errorBody',
+          provider: 'Erro',
+        );
       }
-      return data['choices'][0]['message']['content'] ?? '';
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['choices']?[0]?['message']?['content'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: '❌ Cerebras: resposta vazia.', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'Cerebras');
     } catch (e) {
-      log('getAnswerCerebrasE: $e');
-      return '';
+      return AIResponse(text: '❌ Cerebras: exceção - $e', provider: 'Erro');
     }
   }
 
-  // ── CLAUDE via OpenRouter ────────────────────────
-  static Future<String> getAnswerClaude(String question) async {
-    return getAnswerOpenRouter(question, 'anthropic/claude-sonnet-4-5');
-  }
+  // ── PROVEDORES DE ATALHO ──────────────────────────
+  static Future<AIResponse> getAnswerClaude(String question) =>
+      getAnswerOpenRouter(question, 'anthropic/claude-sonnet-4-5');
+  static Future<AIResponse> getAnswerDeepSeek(String question) =>
+      getAnswerOpenRouter(question, 'deepseek/deepseek-chat');
+  static Future<AIResponse> getAnswerChatGptOpenRouter(String question) =>
+      getAnswerOpenRouter(question, 'openai/gpt-4o-mini');
 
-  // ── DEEPSEEK via OpenRouter ──────────────────────
-  static Future<String> getAnswerDeepSeek(String question) async {
-    return getAnswerOpenRouter(question, 'deepseek/deepseek-chat');
-  }
-
-  // ── CHATGPT via OpenRouter ───────────────────────
-  static Future<String> getAnswerChatGptOpenRouter(String question) async {
-    return getAnswerOpenRouter(question, 'openai/gpt-4o-mini');
-  }
-
-  // ── CLOUDFLARE WORKERS AI (geração de imagem) ────
+  // ── IMAGEM ────────────────────────────────────────
   static Future<String> generateImage(String prompt) async {
     if (cloudflareKey.isEmpty) {
-      log('⚠️ Cloudflare key não definida');
-      return '';
+      return '❌ Cloudflare: chave não configurada.';
     }
-    const String accountId = '344ae813a0f97087c8b9d03eeb5dbfb5'; // substitua pela sua
+    const String accountId = '344ae813a0f97087c8b9d03eeb5dbfb5';
     try {
       final res = await post(
         Uri.parse(
@@ -222,92 +224,89 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
         },
         body: jsonEncode({'prompt': prompt}),
       );
-      final body = utf8.decode(res.bodyBytes);
-      log('Cloudflare response: ${body.substring(0, body.length > 200 ? 200 : body.length)}...');
-      final data = jsonDecode(body);
-      if (data['result'] == null) return '';
-      return data['result']['image'] ?? '';
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return '❌ Cloudflare (status ${res.statusCode}): $errorBody';
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      return data['result']?['image'] ?? '❌ Cloudflare: imagem não gerada.';
     } catch (e) {
-      log('generateImageE: $e');
-      return '';
+      return '❌ Cloudflare: exceção - $e';
     }
   }
 
-  // ── ROTEADOR COM FALLBACK ────────────────────────
+  // ── ROTEADOR PRINCIPAL (COM RELATÓRIO DE ERROS) ──
   static Future<AIResponse> getAnswer(String question) async {
-    final hasAnyKey = apiKey.isNotEmpty || openrouterKey.isNotEmpty ||
-        groqKey.isNotEmpty || cerebrasKey.isNotEmpty;
-    if (!hasAnyKey) {
-      return AIResponse(
-        text: '⚠️ Nenhuma chave de API configurada. Configure em lib/helper/global.dart.',
-        provider: 'Erro',
-      );
+    // Verifica chaves faltantes
+    final keyCheck = _checkKeys();
+    if (keyCheck.isNotEmpty) {
+      return AIResponse(text: keyCheck, provider: 'Configuração');
     }
 
     final q = question.toLowerCase();
     final prompt = 'Responda sempre em português brasileiro. $question';
 
-    List<Future<String> Function()> attempts;
-    List<String> names;
-
+    // Lista de tentativas com nome e função
+    List<Map<String, dynamic>> attempts = [];
     if (q.contains('código') || q.contains('code') ||
         q.contains('dart') || q.contains('python') ||
         q.contains('flutter') || q.contains('função') ||
         q.contains('erro') || q.contains('bug')) {
       attempts = [
-        () => getAnswerCerebras(prompt, 'llama-4-scout-17b-16e-instruct'),
-        () => getAnswerDeepSeek(prompt),
-        () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'),
-        () => getAnswerOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct:free'),
-        () => getAnswerGemini(prompt),
+        {'fn': () => getAnswerCerebras(prompt, 'llama-4-scout-17b-16e-instruct'), 'name': 'Cerebras'},
+        {'fn': () => getAnswerDeepSeek(prompt), 'name': 'DeepSeek'},
+        {'fn': () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'), 'name': 'Groq-Llama'},
+        {'fn': () => getAnswerOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct:free'), 'name': 'Llama-Free'},
+        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
       ];
-      names = ['Cerebras', 'DeepSeek', 'Llama', 'Llama', 'Gemini'];
     } else if (q.contains('explica') || q.contains('redija') ||
         q.contains('resumo') || q.contains('analise') ||
         q.contains('escreva') || q.contains('texto') ||
         q.length > 300) {
       attempts = [
-        () => getAnswerGemini(prompt),
-        () => getAnswerClaude(prompt),
-        () => getAnswerGroq(prompt, 'mixtral-8x7b-32768'),
-        () => getAnswerOpenRouter(prompt, 'google/gemma-3-27b-it:free'),
+        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
+        {'fn': () => getAnswerClaude(prompt), 'name': 'Claude'},
+        {'fn': () => getAnswerGroq(prompt, 'mixtral-8x7b-32768'), 'name': 'Mixtral'},
+        {'fn': () => getAnswerOpenRouter(prompt, 'google/gemma-3-27b-it:free'), 'name': 'Gemma'},
       ];
-      names = ['Gemini', 'Claude', 'Mixtral', 'Gemma'];
     } else {
       attempts = [
-        () => getAnswerClaude(prompt),
-        () => getAnswerChatGptOpenRouter(prompt),
-        () => getAnswerGemini(prompt),
-        () => getAnswerGroq(prompt, 'gemma2-9b-it'),
+        {'fn': () => getAnswerClaude(prompt), 'name': 'Claude'},
+        {'fn': () => getAnswerChatGptOpenRouter(prompt), 'name': 'ChatGPT'},
+        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
+        {'fn': () => getAnswerGroq(prompt, 'gemma2-9b-it'), 'name': 'Gemma-Groq'},
       ];
-      names = ['Claude', 'ChatGPT', 'Gemini', 'Gemma'];
     }
 
+    // Tenta cada provedor
+    List<String> errors = [];
     for (int i = 0; i < attempts.length; i++) {
       try {
-        final result = await attempts[i]();
-        if (result.isNotEmpty) {
-          return AIResponse(text: result, provider: names[i]);
+        final result = await (attempts[i]['fn'] as Future<AIResponse> Function())();
+        if (result.provider != 'Erro') {
+          return result; // Sucesso!
+        } else {
+          errors.add('${attempts[i]['name']}: ${result.text}');
         }
-        log('Tentativa $i (${names[i]}) retornou vazio');
       } catch (e) {
-        log('Tentativa $i (${names[i]}) falhou: $e');
+        errors.add('${attempts[i]['name']}: Exceção - $e');
       }
     }
 
+    // Todos falharam – exibe relatório completo
+    final errorReport = errors.join('\n\n');
     return AIResponse(
-      text: 'Nenhuma IA disponível no momento. Verifique sua conexão e as chaves de API.',
+      text: '❌ Todas as tentativas falharam.\n\n$errorReport',
       provider: 'Erro',
     );
   }
 
-  // ── IMAGENS LEXICA (busca) ────────────────────────
+  // ── LEXICA (imagens) ───────────────────────────────
   static Future<List<String>> searchAiImages(String prompt) async {
     try {
       final res =
           await get(Uri.parse('https://lexica.art/api/v1/search?q=$prompt'));
-      final body = utf8.decode(res.bodyBytes);
-      final data = jsonDecode(body);
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
       if (data['images'] == null) return [];
       return List.from(data['images']).map((e) => e['src'].toString()).toList();
     } catch (e) {
