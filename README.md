@@ -14,7 +14,7 @@ A powerful app built with Flutter that integrates Ais, image generation.
 
 ## 📦 APKs:
 
-- **Global APK:**  
+
 
 
 ---
