@@ -35,6 +35,7 @@ jobs:
           sed -i "s/String huggingfaceKey = '';/String huggingfaceKey = '${{ secrets.HUGGINGFACE_KEY }}';/" lib/helper/global.dart
           sed -i "s/String bazaarKey = '';/String bazaarKey = '${{ secrets.BAZAAR_KEY }}';/" lib/helper/global.dart
           sed -i "s/String serpapiKey = '';/String serpapiKey = '${{ secrets.SERPAPI_KEY }}';/" lib/helper/global.dart
+          sed -i "s/String magicHourKey = '';/String magicHourKey = '${{ secrets.MAGICHOURKEY }}';/" lib/helper/global.dart
 
       - name: Get packages
         run: flutter pub get
