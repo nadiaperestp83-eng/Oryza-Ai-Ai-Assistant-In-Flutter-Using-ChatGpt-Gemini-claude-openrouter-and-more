@@ -10,36 +10,80 @@ class ChatController extends GetxController {
   final scrollC = ScrollController();
 
   final list = <Message>[
-    Message(msg: 'Hello, How can I help you?', msgType: MessageType.bot)
+    Message(msg: 'Oi como posso ajudar?', msgType: MessageType.bot)
   ].obs;
 
   Future<void> askQuestion() async {
-    if (textC.text.trim().isNotEmpty) {
-      list.add(Message(msg: textC.text, msgType: MessageType.user));
-      list.add(Message(msg: '', msgType: MessageType.bot));
-      _scrollDown();
+    if (textC.text.trim().isEmpty) {
+      MyDialog.info('Ask Something!');
+      return;
+    }
 
-      try {
-        final res = await APIs.getAnswer(textC.text);
-        list.removeLast();
+    final question = textC.text;
+    list.add(Message(msg: question, msgType: MessageType.user));
+    textC.text = '';
+
+    if (APIs.isVideoRequest(question)) {
+      await _askVideo(question);
+    } else {
+      await _askText(question);
+    }
+  }
+
+  Future<void> _askText(String question) async {
+    list.add(Message(msg: '', msgType: MessageType.bot));
+    _scrollDown();
+
+    try {
+      final res = await APIs.getAnswer(question);
+      list.removeLast();
+      list.add(Message(
+        msg: res.text.isEmpty ? 'Resposta vazia — provider: ${res.provider}' : res.text,
+        msgType: MessageType.bot,
+        aiProvider: res.provider,
+      ));
+    } catch (e) {
+      list.removeLast();
+      list.add(Message(
+        msg: 'Exceção no controller: $e',
+        msgType: MessageType.bot,
+      ));
+    }
+
+    _scrollDown();
+  }
+
+  Future<void> _askVideo(String question) async {
+    // Mensagem vazia sem texto marca o estado "gerando vídeo" para o
+    // MessageCard mostrar o anel pulsando em vez do texto/typewriter.
+    list.add(Message(msg: '', msgType: MessageType.bot, videoUrl: ''));
+    _scrollDown();
+
+    try {
+      final res = await APIs.generateVideo(question);
+      list.removeLast();
+      if (res.success) {
         list.add(Message(
-          msg: res.text.isEmpty ? 'Resposta vazia — provider: ${res.provider}' : res.text,
+          msg: '',
           msgType: MessageType.bot,
-          aiProvider: res.provider,
+          videoUrl: res.videoUrl,
+          aiProvider: 'Magic Hour',
         ));
-      } catch (e) {
-        list.removeLast();
+      } else {
         list.add(Message(
-          msg: 'Exceção no controller: $e',
+          msg: res.error ?? 'Não foi possível gerar o vídeo.',
           msgType: MessageType.bot,
         ));
       }
-
-      _scrollDown();
-      textC.text = '';
-    } else {
-      MyDialog.info('Ask Something!');
+    } catch (e) {
+      list.removeLast();
+      list.add(Message(
+        msg: 'Exceção ao gerar vídeo: $e',
+        msgType: MessageType.bot,
+      ));
     }
+
+    _scrollDown();
   }
 
   void _scrollDown() {
