@@ -82,13 +82,13 @@ class _BotMessage extends StatelessWidget {
                     ? AnimatedTextKit(
                         animatedTexts: [
                           TypewriterAnimatedText(
-                            'Aguarde...',
+                            'Buscando...',
                             textStyle: GoogleFonts.inter(
                               fontSize: 15,
                               color: Colors.white54,
                               height: 1.5,
                             ),
-                            speed: const Duration(milliseconds: 80),
+                            speed: const Duration(milliseconds: 50),
                           ),
                         ],
                         repeatForever: true,
