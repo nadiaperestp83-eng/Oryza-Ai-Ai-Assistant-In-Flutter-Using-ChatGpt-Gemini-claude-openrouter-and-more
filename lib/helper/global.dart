@@ -12,3 +12,5 @@ String openrouterKey = '';
 String openaiKey = '';
 String cloudflareKey = '';
 String cerebrasKey = '';
+String huggingfaceKey = '';
+String bazaarKey = '';
