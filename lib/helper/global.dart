@@ -14,3 +14,4 @@ String cloudflareKey = '';
 String cerebrasKey = '';
 String huggingfaceKey = '';
 String bazaarKey = '';
+String serpapiKey = '';
