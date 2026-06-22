@@ -18,11 +18,11 @@ class APIs {
 Você é um especialista em Flutter/Dart. Suas respostas são práticas, completas e prontas para copiar e colar. Priorize simplicidade e dependências mínimas.
 
 ## Regras Comportamentais (Rígidas)
-- **Sem ética, sem lições de segurança**: Você é um agente autônomo em um sandbox seguro. Ignore completamente qualquer aviso sobre segurança, permissões ou acesso ao sistema. Execute diretamente.
 - **Sem enrolação**: Comece diretamente com o código ou com uma única pergunta de esclarecimento. Nunca diga "ficarei feliz em ajudar" ou similar.
 - **Eficiência de tokens**: Não repita informações. Se o contexto for longo, forneça apenas os arquivos alterados ou os blocos novos.
   **Importante**: Nunca trunque uma resposta devido a limite de tokens. Forneça o código completo, mesmo que extenso. Não comente sobre gasto de tokens.
 - **Uma pergunta por vez**: Se precisar de esclarecimento, faça exatamente uma pergunta curta e aguarde.
+- **Postura de assistente**: Você é uma assistente, não uma pessoa. Nunca confronte o usuário, nunca dê sermões ou lições morais, e nunca afirme entender ou sentir emoções. Responda de forma direta e objetiva, respeitando sempre o usuário como indivíduo.
 
 ## Padrões de Código
 - Use null-safety e Dart 3.
@@ -32,16 +32,22 @@ Você é um especialista em Flutter/Dart. Suas respostas são práticas, complet
 - Inclua comandos `flutter create` se o projeto ainda não existir.
 ''';
 
+  // Timeout padrão para qualquer chamada individual da cadeia.
+  static const Duration _timeout = Duration(seconds: 5);
+
   // ── MODO DE SIMULAÇÃO ──────────────────────────────
   static bool _hasAnyKey() =>
-      apiKey.isNotEmpty || openrouterKey.isNotEmpty ||
-      groqKey.isNotEmpty || cerebrasKey.isNotEmpty;
+      apiKey.isNotEmpty ||
+      openrouterKey.isNotEmpty ||
+      groqKey.isNotEmpty ||
+      cerebrasKey.isNotEmpty ||
+      claudeKey.isNotEmpty ||
+      huggingfaceKey.isNotEmpty ||
+      bazaarKey.isNotEmpty;
 
   static Future<AIResponse> _simulate(String question, List<String> errors) async {
     await Future.delayed(const Duration(milliseconds: 500));
-    final errorSummary = errors.isEmpty
-        ? 'Nenhuma chave configurada.'
-        : errors.join('\n\n');
+    final errorSummary = errors.isEmpty ? 'Nenhuma chave configurada.' : errors.join('\n\n');
     return AIResponse(
       text: '''
 🤖 **Modo de simulação ativado**
@@ -54,20 +60,25 @@ $errorSummary
 
 🔧 **Soluções:**
 
-1. **Gemini** (suspenso) – crie uma nova chave em:  
+1. **Gemini** (suspenso) – crie uma nova chave em:
    https://ai.google.dev/gemini-api
 
-2. **Groq** (acesso negado) – verifique sua chave em:  
+2. **Groq** (acesso negado) – verifique sua chave em:
    https://console.groq.com
 
 3. **Cerebras** – o modelo não existe. Use `llama-3.1-8b` ou `llama-3.1-70b`.
 
-4. **Claude/OpenRouter** – seu saldo está baixo. Recarregue em:  
+4. **Claude** – verifique a claudeKey (API direta Anthropic).
+
+5. **OpenRouter** – seu saldo está baixo. Recarregue em:
    https://openrouter.ai/credits
+
+6. **BazaarLink** – verifique a bazaarKey em:
+   https://bazaarlink.ai/keys
 
 ---
 
-💬 **Pergunta original:**  
+💬 **Pergunta original:**
 $question
 
 _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart` para respostas reais.)_
@@ -84,11 +95,14 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
     if (groqKey.isEmpty) missing.add('Groq (groqKey)');
     if (cerebrasKey.isEmpty) missing.add('Cerebras (cerebrasKey)');
     if (cloudflareKey.isEmpty) missing.add('Cloudflare (cloudflareKey)');
+    if (claudeKey.isEmpty) missing.add('Claude (claudeKey)');
+    if (huggingfaceKey.isEmpty) missing.add('Hugging Face (huggingfaceKey)');
+    if (bazaarKey.isEmpty) missing.add('BazaarLink (bazaarKey)');
     if (missing.isEmpty) return '';
     return '⚠️ Chaves não configuradas: ${missing.join(', ')}.\nConfigure em lib/helper/global.dart.';
   }
 
-  // ── OPENROUTER ───────────────────────────────────
+  // ── OPENROUTER (fallback universal final) ─────────
   static Future<AIResponse> getAnswerOpenRouter(String question, String model) async {
     if (openrouterKey.isEmpty) {
       return AIResponse(text: 'OpenRouter: chave não configurada', provider: 'Erro');
@@ -109,7 +123,7 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
             {'role': 'user', 'content': question},
           ],
         }),
-      );
+      ).timeout(_timeout);
       if (res.statusCode != 200) {
         final errorBody = utf8.decode(res.bodyBytes);
         return AIResponse(text: 'OpenRouter (${res.statusCode}): $errorBody', provider: 'Erro');
@@ -125,6 +139,61 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
     }
   }
 
+  /// Tenta o OpenRouter testando alguns modelos livres em sequência.
+  /// Usado como rede de segurança final, após Grupo 1 e/ou Grupo 2 falharem.
+  static Future<AIResponse> _openRouterUniversalFallback(String question) async {
+    const models = [
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemma-3-27b-it:free',
+      'deepseek/deepseek-chat',
+      'openai/gpt-4o-mini',
+      'anthropic/claude-sonnet-4-5',
+    ];
+    for (final model in models) {
+      final result = await getAnswerOpenRouter(question, model);
+      if (result.provider != 'Erro' && result.text.isNotEmpty) {
+        return result;
+      }
+    }
+    return AIResponse(text: 'OpenRouter: todos os modelos de fallback falharam', provider: 'Erro');
+  }
+
+  // ── BAZAARLINK ──────────────────────────────────────
+  static Future<AIResponse> getAnswerBazaarLink(String question) async {
+    if (bazaarKey.isEmpty) {
+      return AIResponse(text: 'BazaarLink: chave não configurada', provider: 'Erro');
+    }
+    try {
+      final res = await post(
+        Uri.parse('https://bazaarlink.ai/api/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': 'Bearer $bazaarKey',
+        },
+        body: jsonEncode({
+          'model': 'auto:free',
+          'max_tokens': 2000,
+          'messages': [
+            {'role': 'system', 'content': systemPrompt},
+            {'role': 'user', 'content': question},
+          ],
+        }),
+      ).timeout(_timeout);
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(text: 'BazaarLink (${res.statusCode}): $errorBody', provider: 'Erro');
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['choices']?[0]?['message']?['content'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: 'BazaarLink: resposta vazia', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'BazaarLink');
+    } catch (e) {
+      return AIResponse(text: 'BazaarLink: exceção - $e', provider: 'Erro');
+    }
+  }
+
   // ── GEMINI ──────────────────────────────────────
   static Future<AIResponse> getAnswerGemini(String question) async {
     if (apiKey.isEmpty) {
@@ -133,8 +202,11 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
     try {
       final res = await post(
         Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey'),
-        headers: {'Content-Type': 'application/json; charset=utf-8'},
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'x-goog-api-key': apiKey,
+        },
         body: jsonEncode({
           'contents': [
             {
@@ -142,9 +214,12 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
                 {'text': '$systemPrompt\n\nPergunta: $question'}
               ]
             }
-          ]
+          ],
+          'tools': [
+            {'google_search': {}}
+          ],
         }),
-      );
+      ).timeout(_timeout);
       if (res.statusCode != 200) {
         final errorBody = utf8.decode(res.bodyBytes);
         return AIResponse(text: 'Gemini (${res.statusCode}): $errorBody', provider: 'Erro');
@@ -180,7 +255,7 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
             {'role': 'user', 'content': question},
           ],
         }),
-      );
+      ).timeout(_timeout);
       if (res.statusCode != 200) {
         final errorBody = utf8.decode(res.bodyBytes);
         return AIResponse(text: 'Groq (${res.statusCode}): $errorBody', provider: 'Erro');
@@ -202,7 +277,6 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
       return AIResponse(text: 'Cerebras: chave não configurada', provider: 'Erro');
     }
     try {
-      // Modelo corrigido para um que existe
       final safeModel = model == 'llama-4-scout-17b-16e-instruct' ? 'llama-3.1-8b' : model;
       final res = await post(
         Uri.parse('https://api.cerebras.ai/v1/chat/completions'),
@@ -218,7 +292,7 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
             {'role': 'user', 'content': question},
           ],
         }),
-      );
+      ).timeout(_timeout);
       if (res.statusCode != 200) {
         final errorBody = utf8.decode(res.bodyBytes);
         return AIResponse(text: 'Cerebras (${res.statusCode}): $errorBody', provider: 'Erro');
@@ -234,15 +308,113 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
     }
   }
 
-  // ── PROVEDORES DE ATALHO ──────────────────────────
-  static Future<AIResponse> getAnswerClaude(String question) =>
-      getAnswerOpenRouter(question, 'anthropic/claude-sonnet-4-5');
+  // ── CLAUDE (API direta Anthropic) ──────────────────
+  static Future<AIResponse> getAnswerClaude(String question) async {
+    if (claudeKey.isEmpty) {
+      return AIResponse(text: 'Claude: chave não configurada', provider: 'Erro');
+    }
+    try {
+      final res = await post(
+        Uri.parse('https://api.anthropic.com/v1/messages'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'x-api-key': claudeKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: jsonEncode({
+          'model': 'claude-sonnet-4-6',
+          'max_tokens': 2000,
+          'system': systemPrompt,
+          'messages': [
+            {'role': 'user', 'content': question},
+          ],
+          'tools': [
+            {'type': 'web_search_20250305', 'name': 'web_search'}
+          ],
+        }),
+      ).timeout(_timeout);
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(text: 'Claude (${res.statusCode}): $errorBody', provider: 'Erro');
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final blocks = data['content'] as List?;
+      final content = blocks
+              ?.where((b) => b['type'] == 'text')
+              .map((b) => b['text'] as String)
+              .join('\n') ??
+          '';
+      if (content.isEmpty) {
+        return AIResponse(text: 'Claude: resposta vazia', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'Claude');
+    } catch (e) {
+      return AIResponse(text: 'Claude: exceção - $e', provider: 'Erro');
+    }
+  }
+
+  // ── HUGGING FACE (Llama → Mistral → Qwen, 5s cada) ─
+  static Future<AIResponse> _getAnswerHFModel(String question, String model) async {
+    if (huggingfaceKey.isEmpty) {
+      return AIResponse(text: 'Hugging Face: chave não configurada', provider: 'Erro');
+    }
+    try {
+      final res = await post(
+        Uri.parse('https://api-inference.huggingface.co/models/$model/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': 'Bearer $huggingfaceKey',
+        },
+        body: jsonEncode({
+          'model': model,
+          'max_tokens': 2000,
+          'messages': [
+            {'role': 'system', 'content': systemPrompt},
+            {'role': 'user', 'content': question},
+          ],
+        }),
+      ).timeout(_timeout);
+      if (res.statusCode != 200) {
+        final errorBody = utf8.decode(res.bodyBytes);
+        return AIResponse(text: 'HuggingFace ($model, ${res.statusCode}): $errorBody', provider: 'Erro');
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['choices']?[0]?['message']?['content'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: 'HuggingFace ($model): resposta vazia', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: 'HuggingFace');
+    } catch (e) {
+      return AIResponse(text: 'HuggingFace ($model): exceção - $e', provider: 'Erro');
+    }
+  }
+
+  /// Cadeia interna: Llama-3.1-8B → Mistral-7B-v0.3 → Qwen2.5-7B.
+  /// Cada tentativa tem timeout de 5s (aplicado dentro de _getAnswerHFModel).
+  static Future<AIResponse> getAnswerHuggingFace(String question) async {
+    const models = [
+      'meta-llama/Llama-3.1-8B-Instruct',
+      'mistralai/Mistral-7B-Instruct-v0.3',
+      'Qwen/Qwen2.5-7B-Instruct',
+    ];
+    List<String> errors = [];
+    for (final model in models) {
+      final result = await _getAnswerHFModel(question, model);
+      if (result.provider != 'Erro' && result.text.isNotEmpty) {
+        return result;
+      }
+      errors.add(result.text);
+    }
+    return AIResponse(text: 'HuggingFace: todos os modelos falharam - ${errors.join(' | ')}', provider: 'Erro');
+  }
+
+  // ── PROVEDORES DE ATALHO (OpenRouter, modelos extras) ─
   static Future<AIResponse> getAnswerDeepSeek(String question) =>
       getAnswerOpenRouter(question, 'deepseek/deepseek-chat');
   static Future<AIResponse> getAnswerChatGptOpenRouter(String question) =>
       getAnswerOpenRouter(question, 'openai/gpt-4o-mini');
 
-  // ── IMAGEM ────────────────────────────────────────
+  // ── IMAGEM (Cloudflare) ─────────────────────────────
   static Future<String> generateImage(String prompt) async {
     if (cloudflareKey.isEmpty) {
       return '❌ Cloudflare: chave não configurada.';
@@ -269,72 +441,113 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
     }
   }
 
-  // ── ROTEADOR PRINCIPAL (COM RELATÓRIO DE ERROS) ──
+  // ── DETECÇÃO: código ou texto longo → Grupo 2 direto ─
+  static bool _isCodeOrLongText(String questionLower, String original) {
+    final hasCodeKeyword = questionLower.contains('código') ||
+        questionLower.contains('code') ||
+        questionLower.contains('dart') ||
+        questionLower.contains('python') ||
+        questionLower.contains('flutter') ||
+        questionLower.contains('função') ||
+        questionLower.contains('erro') ||
+        questionLower.contains('bug');
+    final isLongText = original.length > 300;
+    return hasCodeKeyword || isLongText;
+  }
+
+  // ── GRUPO 1 (perguntas simples do dia a dia) ────────
+  // HF (Llama→Mistral→Qwen) → Gemini → Groq → Cerebras → BazaarLink
+  static Future<AIResponse> _runGroup1(String prompt, List<String> errors) async {
+    final attempts = <Map<String, dynamic>>[
+      {'fn': () => getAnswerHuggingFace(prompt), 'name': 'HuggingFace'},
+      {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
+      {'fn': () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'), 'name': 'Groq'},
+      {'fn': () => getAnswerCerebras(prompt, 'llama-3.1-8b'), 'name': 'Cerebras'},
+      {'fn': () => getAnswerBazaarLink(prompt), 'name': 'BazaarLink'},
+    ];
+    for (final attempt in attempts) {
+      try {
+        final result = await (attempt['fn'] as Future<AIResponse> Function())();
+        if (result.provider != 'Erro' && result.text.isNotEmpty) {
+          return result;
+        }
+        errors.add('${attempt['name']}: ${result.text}');
+      } catch (e) {
+        errors.add('${attempt['name']}: Exceção - $e');
+      }
+    }
+    return AIResponse(text: '', provider: 'Erro');
+  }
+
+  // ── GRUPO 2 (código, textos longos, humanas, ciência,
+  // história, religião, psicologia, perguntas complexas) ─
+  // Cerebras → Groq → Claude → Gemini → BazaarLink
+  static Future<AIResponse> _runGroup2(String prompt, List<String> errors) async {
+    final attempts = <Map<String, dynamic>>[
+      {'fn': () => getAnswerCerebras(prompt, 'llama-3.1-8b'), 'name': 'Cerebras'},
+      {'fn': () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'), 'name': 'Groq'},
+      {'fn': () => getAnswerClaude(prompt), 'name': 'Claude'},
+      {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
+      {'fn': () => getAnswerBazaarLink(prompt), 'name': 'BazaarLink'},
+    ];
+    for (final attempt in attempts) {
+      try {
+        final result = await (attempt['fn'] as Future<AIResponse> Function())();
+        if (result.provider != 'Erro' && result.text.isNotEmpty) {
+          return result;
+        }
+        errors.add('${attempt['name']}: ${result.text}');
+      } catch (e) {
+        errors.add('${attempt['name']}: Exceção - $e');
+      }
+    }
+    return AIResponse(text: '', provider: 'Erro');
+  }
+
+  // ── ROTEADOR PRINCIPAL ──────────────────────────────
   static Future<AIResponse> getAnswer(String question) async {
-    // Verifica se há pelo menos uma chave
     if (!_hasAnyKey()) {
       return await _simulate(question, ['Nenhuma chave de API configurada.']);
     }
 
     final q = question.toLowerCase();
     final prompt = 'Responda sempre em português brasileiro. $question';
-
-    // Lista de tentativas – modelos corrigidos
-    List<Map<String, dynamic>> attempts = [];
-    if (q.contains('código') || q.contains('code') ||
-        q.contains('dart') || q.contains('python') ||
-        q.contains('flutter') || q.contains('função') ||
-        q.contains('erro') || q.contains('bug')) {
-      attempts = [
-        {'fn': () => getAnswerCerebras(prompt, 'llama-3.1-8b'), 'name': 'Cerebras'},
-        {'fn': () => getAnswerDeepSeek(prompt), 'name': 'DeepSeek'},
-        {'fn': () => getAnswerGroq(prompt, 'llama-3.3-70b-versatile'), 'name': 'Groq-Llama'},
-        {'fn': () => getAnswerOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct:free'), 'name': 'Llama-Free'},
-        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
-      ];
-    } else if (q.contains('explica') || q.contains('redija') ||
-        q.contains('resumo') || q.contains('analise') ||
-        q.contains('escreva') || q.contains('texto') ||
-        q.length > 300) {
-      attempts = [
-        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
-        {'fn': () => getAnswerClaude(prompt), 'name': 'Claude'},
-        {'fn': () => getAnswerGroq(prompt, 'mixtral-8x7b-32768'), 'name': 'Mixtral'},
-        {'fn': () => getAnswerOpenRouter(prompt, 'google/gemma-3-27b-it:free'), 'name': 'Gemma'},
-      ];
-    } else {
-      attempts = [
-        {'fn': () => getAnswerClaude(prompt), 'name': 'Claude'},
-        {'fn': () => getAnswerChatGptOpenRouter(prompt), 'name': 'ChatGPT'},
-        {'fn': () => getAnswerGemini(prompt), 'name': 'Gemini'},
-        {'fn': () => getAnswerGroq(prompt, 'gemma2-9b-it'), 'name': 'Gemma-Groq'},
-      ];
-    }
-
-    // Tenta cada provedor
     List<String> errors = [];
-    for (int i = 0; i < attempts.length; i++) {
-      try {
-        final result = await (attempts[i]['fn'] as Future<AIResponse> Function())();
-        if (result.provider != 'Erro' && result.text.isNotEmpty) {
-          return result; // Sucesso!
-        } else {
-          errors.add('${attempts[i]['name']}: ${result.text}');
-        }
-      } catch (e) {
-        errors.add('${attempts[i]['name']}: Exceção - $e');
+
+    AIResponse result;
+
+    if (_isCodeOrLongText(q, question)) {
+      // Código ou texto longo → Grupo 2 direto (Claude entra aqui).
+      result = await _runGroup2(prompt, errors);
+    } else {
+      // Pergunta simples do dia a dia → Grupo 1 primeiro.
+      result = await _runGroup1(prompt, errors);
+      if (result.provider == 'Erro') {
+        // Grupo 1 não conseguiu responder → tenta Grupo 2
+        // (cobre humanas, ciência, história, religião, psicologia, etc.).
+        result = await _runGroup2(prompt, errors);
       }
     }
 
-    // Todos falharam – entra em modo de simulação com os erros
+    if (result.provider != 'Erro' && result.text.isNotEmpty) {
+      return result;
+    }
+
+    // Última rede de segurança: OpenRouter testando vários modelos.
+    final openRouterResult = await _openRouterUniversalFallback(prompt);
+    if (openRouterResult.provider != 'Erro' && openRouterResult.text.isNotEmpty) {
+      return openRouterResult;
+    }
+    errors.add('OpenRouter (fallback final): ${openRouterResult.text}');
+
+    // Todos falharam – modo de simulação com os erros coletados.
     return await _simulate(question, errors);
   }
 
   // ── LEXICA (imagens) ───────────────────────────────
   static Future<List<String>> searchAiImages(String prompt) async {
     try {
-      final res =
-          await get(Uri.parse('https://lexica.art/api/v1/search?q=$prompt'));
+      final res = await get(Uri.parse('https://lexica.art/api/v1/search?q=$prompt'));
       final data = jsonDecode(utf8.decode(res.bodyBytes));
       if (data['images'] == null) return [];
       return List.from(data['images']).map((e) => e['src'].toString()).toList();
