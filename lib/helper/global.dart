@@ -15,3 +15,4 @@ String cerebrasKey = '';
 String huggingfaceKey = '';
 String bazaarKey = '';
 String serpapiKey = '';
+String magicHourKey = '';
