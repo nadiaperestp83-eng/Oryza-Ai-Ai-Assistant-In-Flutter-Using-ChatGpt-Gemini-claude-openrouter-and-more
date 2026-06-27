@@ -512,6 +512,17 @@ _(Esta é uma resposta simulada. Atualize suas chaves em `lib/helper/global.dart
     }
   }
 
+  // ── DETECÇÃO: pedido de imagem no texto livre ───────
+  static bool isImageRequest(String question) {
+    final q = question.toLowerCase();
+    const triggers = [
+      'crie uma imagem', 'criar uma imagem', 'cria uma imagem',
+      'gere uma imagem', 'gerar uma imagem', 'gera uma imagem',
+      'faça uma imagem', 'fazer uma imagem', 'faz uma imagem',
+    ];
+    return triggers.any((t) => q.contains(t));
+  }
+
   // ── DETECÇÃO: pedido de vídeo no texto livre ────────
   static bool isVideoRequest(String question) {
     final q = question.toLowerCase();
