@@ -6,6 +6,7 @@ import 'package:http/http.dart';
 import 'package:translator_plus/translator_plus.dart';
 
 import '../helper/global.dart';
+import '../helper/weather_service.dart';
 
 class AIResponse {
   final String text;
@@ -666,6 +667,147 @@ Exemplos de pedidos de tradução: "traduza bom dia para inglês", "como se diz 
     } catch (_) {
       return (isTranslation: false, text: '', targetLanguage: '');
     }
+  }
+
+  // ── DETECÇÃO: pedido de clima via classificação por IA ─
+  // Mesmo padrão do classifyTranslationIntent: usa o Cerebras (rápido,
+  // cota generosa, gratuito) para decidir se a mensagem é sobre clima
+  // e extrair a cidade, independente de como a pessoa formular a frase.
+  static const String _weatherClassifierPrompt = '''
+Você é um classificador. Analise a mensagem do usuário e responda APENAS com um JSON, sem texto antes ou depois, sem markdown, no formato exato:
+{"is_weather": true ou false, "city": "nome da cidade mencionada"}
+
+A mensagem é sobre clima se perguntar sobre tempo, temperatura, previsão, chuva, sol, calor, frio, umidade ou vento de algum lugar.
+Extraia só o nome da cidade (sem estado/país), do jeito que apareceu na frase. Se nenhuma cidade for mencionada, responda com city vazio.
+
+Se a mensagem NÃO for sobre clima, responda:
+{"is_weather": false, "city": ""}
+
+Exemplos: "qual o tempo em São Paulo?", "vai chover amanhã no Rio de Janeiro?", "está frio em Curitiba?", "temperatura em Lisboa agora".
+''';
+
+  static Future<({bool isWeather, String city})> classifyWeatherIntent(
+      String question) async {
+    if (cerebrasKey.isEmpty) return (isWeather: false, city: '');
+    try {
+      final res = await post(
+        Uri.parse('https://api.cerebras.ai/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': 'Bearer $cerebrasKey',
+        },
+        body: jsonEncode({
+          'model': 'llama-3.1-8b',
+          'max_tokens': 150,
+          'messages': [
+            {'role': 'system', 'content': _weatherClassifierPrompt},
+            {'role': 'user', 'content': question},
+          ],
+        }),
+      ).timeout(_timeout);
+
+      if (res.statusCode != 200) return (isWeather: false, city: '');
+
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['choices']?[0]?['message']?['content'] ?? '';
+      final cleaned = content
+          .toString()
+          .replaceAll('```json', '')
+          .replaceAll('```', '')
+          .trim();
+      final parsed = jsonDecode(cleaned);
+
+      return (
+        isWeather: parsed['is_weather'] == true,
+        city: parsed['city']?.toString() ?? '',
+      );
+    } catch (_) {
+      return (isWeather: false, city: '');
+    }
+  }
+
+  // ── CLIMA: busca na OpenWeatherMap + formatação amigável via IA ─
+  // 1) chama o WeatherService (dado técnico). 2) entrega esse dado para
+  // a IA gratuita/de maior cota (Cerebras, com Groq como fallback)
+  // transformar em uma resposta natural, no mesmo estilo do chat.
+  // Se ambas as IAs falharem, cai num template local — o usuário nunca
+  // fica sem resposta por causa da etapa de formatação.
+  static const String _weatherFormatterPrompt = '''
+Você é um assistente de chat amigável, respondendo em português brasileiro. Você recebe um JSON com dados técnicos de clima já corretos e atuais. Transforme isso em uma resposta curta (1 a 3 frases), natural e conversacional para o usuário — nunca mostre o JSON nem use blocos de código. Pode usar 1 emoji relacionado ao clima, sem exagero. Não invente nenhum dado que não esteja no JSON recebido.
+''';
+
+  static Future<AIResponse> _formatWeatherWithModel({
+    required String key,
+    required String url,
+    required String model,
+    required String prompt,
+    required String providerName,
+  }) async {
+    if (key.isEmpty) {
+      return AIResponse(text: '$providerName: chave não configurada', provider: 'Erro');
+    }
+    try {
+      final res = await post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': 'Bearer $key',
+        },
+        body: jsonEncode({
+          'model': model,
+          'max_tokens': 300,
+          'messages': [
+            {'role': 'system', 'content': _weatherFormatterPrompt},
+            {'role': 'user', 'content': prompt},
+          ],
+        }),
+      ).timeout(_timeout);
+      if (res.statusCode != 200) {
+        return AIResponse(text: '$providerName (${res.statusCode})', provider: 'Erro');
+      }
+      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      final content = data['choices']?[0]?['message']?['content'] ?? '';
+      if (content.isEmpty) {
+        return AIResponse(text: '$providerName: resposta vazia', provider: 'Erro');
+      }
+      return AIResponse(text: content, provider: providerName);
+    } catch (e) {
+      return AIResponse(text: '$providerName: exceção - $e', provider: 'Erro');
+    }
+  }
+
+  static Future<AIResponse> getWeatherAnswer(WeatherResult weather) async {
+    final prompt = 'Dados de clima (JSON): ${jsonEncode(weather.toPromptJson())}';
+
+    // Cerebras primeiro: gratuito e cota generosa. Groq como fallback.
+    final cerebrasResult = await _formatWeatherWithModel(
+      key: cerebrasKey,
+      url: 'https://api.cerebras.ai/v1/chat/completions',
+      model: 'llama-3.1-8b',
+      prompt: prompt,
+      providerName: 'Cerebras',
+    );
+    if (cerebrasResult.provider != 'Erro' && cerebrasResult.text.isNotEmpty) {
+      return cerebrasResult;
+    }
+
+    final groqResult = await _formatWeatherWithModel(
+      key: groqKey,
+      url: 'https://api.groq.com/openai/v1/chat/completions',
+      model: 'llama-3.3-70b-versatile',
+      prompt: prompt,
+      providerName: 'Groq',
+    );
+    if (groqResult.provider != 'Erro' && groqResult.text.isNotEmpty) {
+      return groqResult;
+    }
+
+    // Última rede de segurança: template local, sem IA nenhuma.
+    final local = '${weather.city}${weather.country.isNotEmpty ? '/${weather.country}' : ''} '
+        'agora: ${weather.description}, ${weather.tempC.toStringAsFixed(0)}°C '
+        '(sensação de ${weather.feelsLikeC.toStringAsFixed(0)}°C), '
+        'umidade de ${weather.humidity}%. 🌤️';
+    return AIResponse(text: local, provider: 'OpenWeatherMap');
   }
 
   // Mapa simples de nomes de idiomas em português → código ISO.
